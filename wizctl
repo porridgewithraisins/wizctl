@@ -291,7 +291,6 @@ scene() {
 
 profile() {
     file="$1"
-    test "$file" = "-" && file=/dev/stdin
     while read -r line; do
         if test "$line" != 'wait'; then
             eval "$line" &
