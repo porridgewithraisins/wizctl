@@ -3,8 +3,8 @@
 set -eu
 
 : "${WIZCTL_FILE:="$HOME/.wizzes"}"
-: "${WIZCTL_SCENES_FILE:="$HOME/wizctl/scenes.txt"}"
-: "${WIZCTL_COLORS_FILE:="$HOME/wizctl/colors.csv"}"
+: "${WIZCTL_SCENES_FILE:="$HOME/wizctl/scenes.txt"}" # TODO change to install location
+: "${WIZCTL_COLORS_FILE:="$HOME/wizctl/colors.csv"}" # TODO change to install location
 : "${WIZCTL_PORT:=38899}"
 : "${WIZCTL_API_PACING:=0.5}"
 : "${WIZ_CTL_ONLINE_ISWIZ:=0}"
