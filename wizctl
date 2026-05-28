@@ -1,6 +1,7 @@
 #! /usr/bin/env bash
 
 set -eu
+set -o pipefail
 
 : "${WIZCTL_FILE:="$HOME/.wizzes"}"
 : "${WIZCTL_SCENES_FILE:="$HOME/wizctl/scenes.txt"}" # TODO change to install location
