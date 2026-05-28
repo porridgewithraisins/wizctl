@@ -319,21 +319,21 @@ preview() {
                 print
             }' "$WIZCTL_SCENES_FILE" |
             gum filter --height 15 --preview "
-                ./wizctl scene '$target' '{}' $* >/dev/null 2>&1 &
+                wizctl scene '$target' '{}' $* >/dev/null 2>&1 &
             "
             ;;
 
         temp)
             printf '%s\n' 2200 2700 3000 3500 4000 5000 6200 |
             gum filter --height 15 --preview '
-                ./wizctl temp '"$target"' '{}' '"$*"' >/dev/null 2>&1 &
+                wizctl temp '"$target"' '{}' '"$*"' >/dev/null 2>&1 &
             '
             ;;
 
         color)
             cut -d, -f1 "$WIZCTL_COLORS_FILE" |
             gum filter --height 15 --preview '
-                ./wizctl color '"$target"' '{}' '"$*"' >/dev/null 2>&1 &
+                wizctl color '"$target"' '{}' '"$*"' >/dev/null 2>&1 &
             '
             ;;
     esac
