@@ -20,3 +20,4 @@ A TUI tool to control Phillips wiz lights. Communicates over UDP. 360 lines of b
 ## TODO
 
 Prettify outputs and make screenshots and gifs and stuff for here. Add links to the above.
+Add instructions about the needed csv and scenes files and stuff
