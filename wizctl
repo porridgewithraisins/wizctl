@@ -2,15 +2,19 @@
 
 set -eu
 
-WIZCTL_FILE="$HOME/.wizzes"
-WIZCTL_PORT=38899
-WIZCTL_API_PACING=0.5
+: "${WIZCTL_FILE:="$HOME/.wizzes"}"
+: "${WIZCTL_SCENES_FILE:="$HOME/wizctl/scenes.txt"}"
+: "${WIZCTL_COLORS_FILE:="$HOME/wizctl/colors.csv"}"
+: "${WIZCTL_PORT:=38899}"
+: "${WIZCTL_API_PACING:=0.5}"
 : "${WIZ_CTL_ONLINE_ISWIZ:=0}"
 : "${WIZCTL_DRY_RUN:=0}"
 : "${WIZCTL_DEBUG:=0}"
 : "${WIZCTL_DEFAULT_DIMMING:=75}"
 : "${WIZCTL_DEFAULT_SPEED:=125}"
 : "${WIZCTL_IFACE:="$(ip route show default | cut -d' ' -f5)"}"
+
+test "$WIZCTL_DEBUG" = 2 && set -x
 
 command -v nc >/dev/null && : "${WIZCTL_NC_IMPL:=nc}"
 command -v ncat >/dev/null && : "${WIZCTL_NC_IMPL:=ncat}"
@@ -227,7 +231,7 @@ color() {
         parsed="$(colorinspector "$color")"
         dimming="${3:-$WIZCTL_DEFAULT_DIMMING}"
     else
-        color="$({ cat colors.csv | cut -d, -f1 | xargs -n1 colorinspector --name; } | gum filter --no-strip-ansi --no-strict --height 25 --header "Enter color(255,255,0 or rgb(1,2,3) or red or #ff0000 or #FF0000)")"
+        color="$({ cat "$WIZCTL_COLORS_FILE" | cut -d, -f1 | xargs -n1 colorinspector --name; } | gum filter --no-strip-ansi --no-strict --height 25 --header "Enter color(255,255,0 or rgb(1,2,3) or red or #ff0000 or #FF0000)")"
         parsed="$(colorinspector "$color")"
         gum style "Using $parsed"
         dimming="$(gum input --value "$WIZCTL_DEFAULT_DIMMING" --placeholder "10-100" --header "Brightness")"
@@ -251,12 +255,12 @@ scene() {
 
     if test "$#" -ge 2; then
         name="$2"
-        type="$(cat scenes.txt | grep " $name$" | cut -d' ' -f2)"
-        id="$(cat scenes.txt | grep " $name$" | cut -d' ' -f1)"
+        type="$(cat "$WIZCTL_SCENES_FILE" | grep " $name$" | cut -d' ' -f2)"
+        id="$(cat "$WIZCTL_SCENES_FILE" | grep " $name$" | cut -d' ' -f1)"
         dimming="${3:-$WIZCTL_DEFAULT_DIMMING}"
         speed="${4:-$WIZCTL_DEFAULT_SPEED}"
     else
-        chosen=$(cat scenes.txt |
+        chosen=$(cat "$WIZCTL_SCENES_FILE" |
         sort -rk2 |
         awk '{
             t=$2;$1=$2=""; sub(/^ +/,""); print $0 " \033[2m" t "\033[0m"
@@ -264,7 +268,7 @@ scene() {
         gum filter --no-strip-ansi --height 15 --header "Choose scene"    )
         name=$(echo "$chosen" | rev | cut -d' ' -f2- | rev)
         type=$(echo "$chosen" | rev | cut -d' ' -f1 | rev)
-        id="$(cat scenes.txt | grep "$type $name$" | cut -d' ' -f1)"
+        id="$(cat "$WIZCTL_SCENES_FILE" | grep "$type $name$" | cut -d' ' -f1)"
 
         dimming="$(gum input --value "$WIZCTL_DEFAULT_DIMMING" --placeholder "10-100" --header "Brightness")"
         while ! test -n "$dimming" || ! test "$dimming" -eq "$dimming" 2>/dev/null || test "$dimming" -lt 10 || test "$dimming" -gt 100; do
@@ -313,7 +317,7 @@ preview() {
                 $1=$2=""
                 sub(/^ +/, "")
                 print
-            }' scenes.txt |
+            }' "$WIZCTL_SCENES_FILE" |
             gum filter --height 15 --preview "
                 ./wizctl scene '$target' '{}' $* >/dev/null 2>&1 &
             "
@@ -327,7 +331,7 @@ preview() {
             ;;
 
         color)
-            cut -d, -f1 colors.csv |
+            cut -d, -f1 "$WIZCTL_COLORS_FILE" |
             gum filter --height 15 --preview '
                 ./wizctl color '"$target"' '{}' '"$*"' >/dev/null 2>&1 &
             '
