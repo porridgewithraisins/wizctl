@@ -74,6 +74,9 @@ _send_ip() {
 }
 
 _scan() {
+    exec 8>/tmp/wizctl.scan.lock
+    flock -n 8 || { echo "scan already running"; return 1; }
+
     brd="$(ip -4 addr show dev "$WIZCTL_IFACE" | awk '/brd/ {print $4}')"
     _send_ip "$(_getstatemsg)" "$brd" '-b'
 }
@@ -81,7 +84,7 @@ _scan() {
 _send_mac() {
     for mac in $2; do
         if ! ip neigh | grep -qF "$mac"; then
-            _scan
+            _scan || return 1
             break
         fi
     done
@@ -112,6 +115,9 @@ list() {
 }
 
 setup(){
+    exec 9>/tmp/wizctl.setup.lock
+    flock 9 || { echo "Setup already running"; return 1; }
+
     if test "$#" -ge 2 && test "$1" = "--manual"; then
         echo "Write the mac address, name and room into the $WIZCTL_FILE file"
     fi
@@ -123,7 +129,7 @@ setup(){
 
     gum style "The next step will temporarily set ALL bulbs to 'red' then change them to 'blue' one by one so you can tell me their names and their rooms. Then they will turn green once setup."
 
-    gum confirm "Continue?" || exit 1
+    gum confirm "Continue?" || return 1
 
     while read -r _ ip; do
         result="$(_send_ip "$(_setcolormsg 255 0 0 92)" "$ip")"
@@ -138,7 +144,7 @@ setup(){
         if test -f "$WIZCTL_FILE" && line="$(cat "$WIZCTL_FILE" | grep "$mac")"; then
             gum confirm "Already exists in file: $line re-setup?" || continue
             tmp="$(mktemp)"
-            cat "$WIZCTL_FILE" | grep -vF "$mac" || true > "$tmp"
+            { cat "$WIZCTL_FILE" | grep -vF "$mac" || true; } > "$tmp"
             mv "$tmp" "$WIZCTL_FILE"
         fi
 
@@ -286,11 +292,14 @@ scene() {
 profile() {
     file="$1"
     test "$file" = "-" && file=/dev/stdin
-    if test "$#" = 2; then
-        echo "--atomic is not yet implemented" >&2
-        return 1
-    fi
-    while read -r line; do echo "$line"; eval "$line"; done < <(cat "$file" | grep -v '^#' | grep .)
+    while read -r line; do
+        if test "$line" != 'wait'; then
+            eval "$line" &
+        else
+            wait
+        fi
+    done < <(cat "$file" | grep -v '^#' | grep .)
+    wait
 }
 
 preview() {
