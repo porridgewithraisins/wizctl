@@ -1,0 +1,32 @@
+1 dynamic Ocean
+2 dynamic Romance
+3 dynamic Sunset
+4 dynamic Party
+5 dynamic Fireplace
+6 static Cozy
+7 dynamic Forest
+8 dynamic Pastel Colors
+9 static Wake up
+10 static Bedtime
+11 static Warm White
+12 static Daylight
+13 static Cool white
+14 static Night light
+15 static Focus
+16 static Relax
+17 static True colors
+18 static TV time
+19 static Plantgrowth
+20 dynamic Spring
+21 dynamic Summer
+22 dynamic Fall
+23 dynamic Deepdive
+24 dynamic Jungle
+25 dynamic Mojito
+26 dynamic Club
+27 dynamic Christmas
+28 dynamic Halloween
+29 dynamic Candlelight
+30 dynamic Golden white
+31 dynamic Pulse
+32 dynamic Steampunk
