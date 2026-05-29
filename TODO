@@ -1,3 +1,4 @@
 prettify outputs
-
+parse json in status and then implement save using that
+save format is just commands just like profile
 write separate music sync script
