@@ -1,6 +1,3 @@
 prettify outputs
 
-allow multiple groups, instead of rooms. _send_mac dedupes, wizzes file has duplicates, no issues
-during setup, allow comma separated groups, then change re-setup to add instead of delete
-
 write separate music sync script

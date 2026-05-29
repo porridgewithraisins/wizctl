@@ -57,11 +57,11 @@ _getstatemsg() {
 }
 
 _setscenemsg() {
-   if test "$1" = "static"; then
-       echo -n "{\"id\":1,\"method\":\"setPilot\",\"params\":{\"sceneId\":$2,\"dimming\":$3}}"
-   else
-       echo -n "{\"id\":1,\"method\":\"setPilot\",\"params\":{\"sceneId\":$2,\"dimming\":$3, \"speed\":$4}}"
-   fi
+    if test "$1" = "static"; then
+        echo -n "{\"id\":1,\"method\":\"setPilot\",\"params\":{\"sceneId\":$2,\"dimming\":$3}}"
+    else
+        echo -n "{\"id\":1,\"method\":\"setPilot\",\"params\":{\"sceneId\":$2,\"dimming\":$3, \"speed\":$4}}"
+    fi
 }
 
 _setcolormsg() {
@@ -86,6 +86,10 @@ _scan() {
     _send_ip "$(_getstatemsg)" "$brd" '-b'
 }
 
+_mac_to_ip() {
+    ip neigh | grep -F "$1" | cut -d' ' -f1
+}
+
 _send_mac() {
     for mac in $2; do
         if ! ip neigh | grep -qF "$mac"; then
@@ -94,9 +98,8 @@ _send_mac() {
         fi
     done
 
-
-    for mac in $2; do
-        ip="$(ip neigh | grep -F "$mac" | cut -d' ' -f1)"
+    for mac in $2; do _mac_to_ip "$mac"; done | sort | uniq |
+    while read -r ip; do
         _send_ip "$1" "$ip"
     done
 }
@@ -105,60 +108,88 @@ _getmacs() {
     cat "$WIZCTL_FILE" | grep -w "$1" | cut -d' ' -f1
 }
 
-scan() { _scan; }
-
-list() {
-    wizzes=$(ip neigh | cut -d' ' -f1,5 |
-        while read -r ip mac; do _iswiz "$mac" && echo "$mac $ip"; done |
-        tee "$WIZCTL_FILE".tmp
-    ) # mac ip
-
-    gum style \
-    "Found these WiZ bulbs:
-    $wizzes
-    "
+_discover() {
+    ip neigh | cut -d' ' -f1,5 | while read -r ip mac; do if _iswiz "$mac"; then echo "$mac $ip"; fi; done
 }
 
-setup(){
+list() {
+    _scan
+    {
+        echo "MAC Name Group(s) IP" | tee "$WIZCTL_FILE.tmp"
+        cat "$WIZCTL_FILE" | while read -r mac name groups; do
+            echo "$mac $name $groups $(_mac_to_ip "$mac" || echo 'offline')";
+        done | awk '{ n[$1]=$2; g[$1] = g[$1] ? g[$1]","$3 : $3; i[$1]=$4 } END { for (m in n) print m, n[m], g[m], i[m] }' | tee -a "$WIZCTL_FILE.tmp"
+        _discover | while read -r mac ip; do
+            cat "$WIZCTL_FILE" | grep -qF "$mac" && continue; echo "$mac" ? ? "$ip";
+        done | tee -a "$WIZCTL_FILE.tmp"
+    } | column -t
+}
+
+setup() {
     exec 9>/tmp/wizctl.setup.lock
     flock 9 || { echo "Setup already running"; return 1; }
 
     if test "$#" -ge 2 && test "$1" = "--manual"; then
         echo "Write the mac address, name and room into the $WIZCTL_FILE file"
+        return 0;
     fi
 
     export $(compgen -v | grep '^WIZCTL')
     export -f $(declare -F | awk '{print $3}')
 
-    gum spin --title "Discovering bulbs..." --show-output -- bash -c 'scan && list'
+    gum spin --title "Discovering bulbs..." --show-output -- bash -c 'list > /dev/null'
+
+    echo "Found these WiZ bulbs:"
+    cat "$WIZCTL_FILE.tmp" | column -t
+
+    sleep 0.6 && echo
 
     gum style "The next step will temporarily set ALL bulbs to 'red' then change them to 'blue' one by one so you can tell me their names and their rooms. Then they will turn green once setup."
 
     gum confirm "Continue?" || return 1
 
-    while read -r _ ip; do
+    cat "$WIZCTL_FILE.tmp" | tail -n+2 | while read -r mac name groups ip; do
+        test "$ip" = offline && continue
         result="$(_send_ip "$(_setcolormsg 255 0 0 92)" "$ip")"
-    done < "$WIZCTL_FILE.tmp"
+        if ! echo "$result" | grep -q '{"success":true}'; then
+            echo "Failed to setup $mac $name $groups $ip" >&2
+            continue
+        fi
+    done
 
-    if ! echo "$result" | grep -q '{"success":true}' || ! gum confirm "Are all of them red?";  then
+    if ! gum confirm "Are all of them red?";  then
        echo "Manual flow here TODO"
        exit 1
     fi
 
-    cat "$WIZCTL_FILE".tmp | while read -r mac ip; do
-        if test -f "$WIZCTL_FILE" && line="$(cat "$WIZCTL_FILE" | grep "$mac")"; then
-            gum confirm "Already exists in file: $line re-setup?" || continue
-            tmp="$(mktemp)"
-            { cat "$WIZCTL_FILE" | grep -vF "$mac" || true; } > "$tmp"
-            mv "$tmp" "$WIZCTL_FILE"
+    cat "$WIZCTL_FILE.tmp" | tail -n+2 | while read -r mac name groups ip; do
+        test "$ip" = offline && continue
+        if test -f "$WIZCTL_FILE" && cat "$WIZCTL_FILE" | grep -F "$mac"; then
+            gum style "This device has already been setup under the name $name in the group(s) $groups"
+            choice="$(echo -e 're-setup\nadd group\nskip' | gum choose --header "$mac")"
+            test "$choice" = skip && continue
+            if test "$choice" = re-setup; then
+                tmp="$(mktemp)"
+                { cat "$WIZCTL_FILE" | grep -vF "$mac" || true; } > "$tmp"
+                mv "$tmp" "$WIZCTL_FILE"
+            fi
         fi
 
         if ! _send_ip "$(_setcolormsg 0 0 255 92)" "$ip" | grep -q '{"success":true}'; then
             gum confirm "Failed to set to blue, set up rest anyway?" && continue || return 1
         fi
+
+        choice="$(echo -e 'setup\nskip' | gum choose --header "Do you want to proceed to setup the light currently blue")"
+        test "$choice" = skip && continue
+
         name=$(gum input --placeholder "What's the name of the blue device?")
-        room=$(gum input --placeholder "What's the room of the blue device?")
-        echo "$mac" "$name" "$room" >> "$WIZCTL_FILE"
+        gum input --placeholder "bedroom,upstairs,warm" |
+            tr ',' '\n' |
+            while read -r group; do
+                group="$(xargs <<< "$group")"
+                test -n "$group" || continue
+                echo "$mac" "$name" "$group" >> "$WIZCTL_FILE"
+            done
         if ! _send_ip "$(_setcolormsg 0 255 0 92)" "$ip" | grep -q '{"success":true}'; then
             gum confirm "Failed to set to green, continue anyways?" && continue || return 1
         fi
@@ -256,17 +287,22 @@ scene() {
 
     if test "$#" -ge 2; then
         name="$2"
-        type="$(cat "$WIZCTL_SCENES_FILE" | grep " $name$" | cut -d' ' -f2)"
+        type="$(cat "$WIZCTL_SCENES_FILE" | grep " $name$" | cut -d' ' -f2 || true)"
+        if test -z "$type"; then
+            echo "Could not find scene corresponding to name $name" >&2
+            return 1
+        fi
         id="$(cat "$WIZCTL_SCENES_FILE" | grep " $name$" | cut -d' ' -f1)"
         dimming="${3:-$WIZCTL_DEFAULT_DIMMING}"
         speed="${4:-$WIZCTL_DEFAULT_SPEED}"
     else
         chosen=$(cat "$WIZCTL_SCENES_FILE" |
-        sort -rk2 |
-        awk '{
-            t=$2;$1=$2=""; sub(/^ +/,""); print $0 " \033[2m" t "\033[0m"
-        }' |
-        gum filter --no-strip-ansi --height 15 --header "Choose scene"    )
+            sort -rk2 |
+            awk '{
+                t=$2;$1=$2=""; sub(/^ +/,""); print $0 " \033[2m" t "\033[0m"
+            }' |
+            gum filter --no-strip-ansi --height 15 --header "Choose scene"
+        )
         name=$(echo "$chosen" | rev | cut -d' ' -f2- | rev)
         type=$(echo "$chosen" | rev | cut -d' ' -f1 | rev)
         id="$(cat "$WIZCTL_SCENES_FILE" | grep "$type $name$" | cut -d' ' -f1)"
