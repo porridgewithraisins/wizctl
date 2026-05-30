@@ -1,4 +1,5 @@
 prettify outputs
-parse json in status and then implement save using that
-save format is just commands just like profile
+wizctl edit and wizctl delete
+add name and group non-empty and no space validation
+wizctl status has to loop over all the lines in result and parse
 write separate music sync script

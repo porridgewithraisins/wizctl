@@ -31,6 +31,12 @@ __breakpoint(){
     done
 }
 
+_json_get() {
+    echo "$1" |
+    grep -oE "\"$2\":[^,}]*" |
+    cut -d: -f2 || true
+}
+
 _iswiz() {
     prefix="$(echo "$1" | cut -c1-8 | tr a-z A-Z)"
 
@@ -75,7 +81,7 @@ _settempmsg() {
 _send_ip() {
     test "$WIZCTL_DRY_RUN" = 1 && echo Sending "$1" to "$2" >&2 && return 0
     READ_WAIT_INTERVAL=$(test "$WIZCTL_NC_IMPL" = "ncat" && echo 0 || echo .5)
-    { echo "$1"; sleep "$READ_WAIT_INTERVAL"; } | "$WIZCTL_NC_IMPL" -uw1 ${3:+$3} "$2" "$WIZCTL_PORT"; echo
+    { { echo "$1"; sleep "$READ_WAIT_INTERVAL"; } | "$WIZCTL_NC_IMPL" -uw1 ${3:+$3} "$2" "$WIZCTL_PORT"; echo; } | grep .
 }
 
 _scan() {
@@ -164,11 +170,11 @@ setup() {
 
     cat "$WIZCTL_FILE.tmp" | tail -n+2 | while read -r mac name groups ip; do
         test "$ip" = offline && continue
-        if test -f "$WIZCTL_FILE" && cat "$WIZCTL_FILE" | grep -F "$mac"; then
+        if test -f "$WIZCTL_FILE" && existing_line="$(cat "$WIZCTL_FILE" | grep -F "$mac")"; then
             gum style "This device has already been setup under the name $name in the group(s) $groups"
-            choice="$(echo -e 're-setup\nadd group\nskip' | gum choose --header "$mac")"
-            test "$choice" = skip && continue
-            if test "$choice" = re-setup; then
+            choice1="$(echo -e 're-setup\nadd group\nskip' | gum choose --header "$mac")"
+            test "$choice1" = skip && continue
+            if test "$choice1" = re-setup; then
                 tmp="$(mktemp)"
                 { cat "$WIZCTL_FILE" | grep -vF "$mac" || true; } > "$tmp"
                 mv "$tmp" "$WIZCTL_FILE"
@@ -179,11 +185,18 @@ setup() {
             gum confirm "Failed to set to blue, set up rest anyway?" && continue || return 1
         fi
 
-        choice="$(echo -e 'setup\nskip' | gum choose --header "Do you want to proceed to setup the light currently blue")"
-        test "$choice" = skip && continue
+        choice2="$(echo -e 'setup\nskip' | gum choose --header "Do you want to proceed to setup the light currently blue")"
+        test "$choice2" = skip && continue
 
-        name=$(gum input --placeholder "What's the name of the blue device?")
-        gum input --placeholder "bedroom,upstairs,warm" |
+        if test "$choice1" = "add group"; then
+            name="$(echo "$existing_line" | head -n1 | cut -d' ' -f2)"
+            group_input_header="What more groups (comma-separated) should this light belong to? (no spaces)"
+        else
+            name=$(gum input --placeholder "bedside,desk" --header "What's the name of the blue device? (no spaces)")
+            group_input_header="What groups (comma-separated) should this light belong to? (no spaces)"
+        fi
+
+        gum input --placeholder "bedroom,upstairs,warm" --header "$group_input_header" |
             tr ',' '\n' |
             while read -r group; do
                 group="$(xargs <<< "$group")"
@@ -202,9 +215,41 @@ status() {
     macs="$(_getmacs "$1")" || return 1
     result="$(_send_mac "$(_getstatemsg)" "$macs")"
     if ! echo "$result" | grep -q '"method":"getPilot"'; then
-        echo "FAILED: $result"
+        echo "FAILED: $result" >&2
+        return 1
     else
-        echo "SUCCESS: $result"
+        if test "$#" -ge 2 && test "$2" = raw; then
+            echo "$result"
+            return 0
+        fi
+        while read -r target; do
+            state="$(_json_get "$target" "state")"
+            sceneId="$(_json_get "$target" "sceneId")"
+            temp="$(_json_get "$target" "temp")"
+            r="$(_json_get "$target" "r")"
+            g="$(_json_get "$target" "g")"
+            b="$(_json_get "$target" "b")"
+            dimming="$(_json_get "$target" "dimming")"
+            speed="$(_json_get "$target" "speed")"
+
+            if test "$state" = false; then
+                echo "off $1"
+            elif test "$sceneId" != 0; then
+                name="$(grep "^$sceneId " "$WIZCTL_SCENES_FILE" | cut -d' ' -f3- || true)"
+                if ! test -n "$name"; then
+                    echo "Could not find scene $sceneId" >&2
+                    return 1
+                fi
+                echo "scene $1 '$name' $dimming${speed:+ $speed}"
+            elif test -n "$r"; then
+                echo "color $1 'rgb($r,$g,$b)' $dimming"
+            elif test -n "$temp"; then
+                echo "temp $1 $temp $dimming"
+            else
+                echo "Could not parse status" >&2
+                return 1
+            fi
+        done <<< "$result"
     fi
 }
 
@@ -334,12 +379,31 @@ profile() {
     file="$1"
     while read -r line; do
         if test "$line" != 'wait'; then
+            echo "$line"
             eval "$line" &
         else
             wait
         fi
     done < <(cat "$file" | grep -v '^#' | grep .)
     wait
+}
+
+save() {
+    if test "$#" = 0; then
+        mapfile -t targets < <(cat "$WIZCTL_FILE" | cut -d' ' -f2)
+    else
+        targets=("$@")
+    fi
+
+    tmp="$(mktemp -d)"
+    for target in "${targets[@]}"; do
+        status "$target" > "$tmp/$target" &
+    done
+
+    wait
+
+    cat "$tmp"/*
+    rm "$tmp"/*
 }
 
 preview() {
@@ -376,6 +440,10 @@ preview() {
     esac
 }
 
+p() {
+    preview "$@"
+}
+
 
 usage() {
     cat <<EOF
@@ -394,7 +462,6 @@ EOF
 }
 
 
-gum style "WiZ CLI"
 cmd="${1:-usage}"
 shift || true
 "$cmd" "$@"

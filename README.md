@@ -1,6 +1,6 @@
 # wizctl
 
-A TUI tool to control Phillips wiz lights. Communicates over UDP. 360 lines of bash.
+A TUI tool to control Phillips wiz lights. Communicates over UDP. ~500 lines of bash.
 
 ## What you can do
 
